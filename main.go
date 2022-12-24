@@ -2,16 +2,21 @@ package main
 
 import (
 	"context"
-	"log"
 	"os"
 	"os/exec"
 	"strings"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 func main() {
+	if os.Getenv("KUBERNETES_SERVICE_HOST") == "" {
+		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
+	}
+
 	endpoint := os.Getenv("GTS_STORAGE_S3_ENDPOINT")
 	bucket := os.Getenv("GTS_STORAGE_S3_BUCKET")
 	accessKey := os.Getenv("GTS_STORAGE_S3_ACCESS_KEY")
@@ -24,40 +29,40 @@ func main() {
 		Secure: useSSL,
 	})
 	if err != nil {
-		log.Fatalln(err)
+		log.Fatal().Err(err).Msg("failed initializing the minio client")
 	}
 
 	for object := range mc.ListObjects(context.TODO(), bucket, minio.ListObjectsOptions{Recursive: true, WithMetadata: true}) {
 		if !strings.HasSuffix(object.Key, ".mp4") {
 			continue
 		}
-		log.Printf("found object %v", object.Key)
+		reqLogger := log.With().Str("key", object.Key).Logger()
+		reqLogger.Trace().Msg("found object")
 		smallKey := strings.Replace(object.Key, "original", "small", 1)
 		smallKey = strings.Replace(smallKey, "mp4", "jpeg", 1)
-		log.Printf("guessing thumbnail %s", smallKey)
+		reqLogger.Debug().Str("thumbnail", smallKey).Msg("computed thumbnail")
 
 		small, err := mc.StatObject(context.TODO(), bucket, smallKey, minio.StatObjectOptions{})
 		if err != nil {
-			log.Printf("no thumbnail found, skipping processing. err=%s", err.Error())
+			reqLogger.Warn().Err(err).Msg("no thumbnail found, skipping processing")
 			continue
 		}
-		log.Printf("found small")
 		if small.UserMetadata["Gts-Thumbnailer-Processed"] == "true" {
-			log.Printf("already processed %s", small.Key)
+			reqLogger.Debug().Msg("already processed")
 			continue
 		}
 		f, err := os.CreateTemp("", "processed")
 		if err != nil {
-			log.Printf("could not open temp file for processing: %v", err.Error())
+			reqLogger.Error().Err(err).Msg("failed to open temp file")
 			continue
 		}
-		log.Printf("created temp file %s", f.Name())
 		defer f.Close()
 		defer os.Remove(f.Name())
+		reqLogger = reqLogger.With().Str("tempfile", f.Name()).Logger()
 
 		objdata, err := mc.GetObject(context.TODO(), bucket, object.Key, minio.GetObjectOptions{})
 		if err != nil {
-			log.Printf("unable to stream data", err.Error())
+			reqLogger.Error().Err(err).Msg("unable to retreive data from object storage")
 			continue
 		}
 
@@ -75,7 +80,7 @@ func main() {
 		cmd.Stdout = f
 		err = cmd.Run()
 		if err != nil {
-			log.Printf("failed to create thumbnail: %s", err.Error())
+			reqLogger.Error().Err(err).Msg("failed to create thumbnail")
 			continue
 		}
 		mc.FPutObject(context.TODO(), bucket, smallKey, f.Name(), minio.PutObjectOptions{
@@ -83,5 +88,6 @@ func main() {
 				"Gts-Thumbnailer-Processed": "true",
 			},
 		})
+		reqLogger.Info().Msg("succesfully processed")
 	}
 }
