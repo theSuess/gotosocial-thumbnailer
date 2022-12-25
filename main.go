@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/minio/minio-go/v7"
@@ -31,6 +32,9 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed initializing the minio client")
 	}
+
+	fname := os.TempDir()
+	fname = filepath.Join(fname, "process.mp4")
 
 	for object := range mc.ListObjects(context.TODO(), bucket, minio.ListObjectsOptions{Recursive: true, WithMetadata: true}) {
 		if !strings.HasSuffix(object.Key, ".mp4") {
@@ -60,14 +64,14 @@ func main() {
 		defer os.Remove(f.Name())
 		reqLogger = reqLogger.With().Str("tempfile", f.Name()).Logger()
 
-		objdata, err := mc.GetObject(context.TODO(), bucket, object.Key, minio.GetObjectOptions{})
+		err = mc.FGetObject(context.TODO(), bucket, object.Key, fname, minio.GetObjectOptions{})
 		if err != nil {
 			reqLogger.Error().Err(err).Msg("unable to retreive data from object storage")
 			continue
 		}
 
 		args := []string{
-			"-i", "pipe:",
+			"-i", fname,
 			"-vf", "thumbnail=n=10",
 			"-frames:v", "1",
 			"-f", "image2pipe",
@@ -76,7 +80,6 @@ func main() {
 		}
 
 		cmd := exec.Command("ffmpeg", args...)
-		cmd.Stdin = objdata
 		cmd.Stdout = f
 		err = cmd.Run()
 		if err != nil {
