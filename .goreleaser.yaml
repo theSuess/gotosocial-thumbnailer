@@ -29,7 +29,7 @@ dockers:
     image_templates:
       - "ghcr.io/thesuess/gotosocial-thumbnailer:{{ .Version }}-arm64"
     build_flag_templates:
-      - --platform=linux/arm64/v8
+      - --platform=linux/arm64
       - --label=org.opencontainers.image.title={{ .ProjectName }}
       - --label=org.opencontainers.image.description={{ .ProjectName }}
       - --label=org.opencontainers.image.url=https://github.com/goreleaser/gotosocial-thumbnailer
