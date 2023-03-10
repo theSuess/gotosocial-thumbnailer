@@ -43,7 +43,7 @@ func main() {
 		reqLogger := log.With().Str("key", object.Key).Logger()
 		reqLogger.Trace().Msg("found object")
 		smallKey := strings.Replace(object.Key, "original", "small", 1)
-		smallKey = strings.Replace(smallKey, "mp4", "jpeg", 1)
+		smallKey = strings.Replace(smallKey, "mp4", "jpg", 1)
 		reqLogger.Debug().Str("thumbnail", smallKey).Msg("computed thumbnail")
 
 		small, err := mc.StatObject(context.TODO(), bucket, smallKey, minio.StatObjectOptions{})
